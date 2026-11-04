@@ -4,35 +4,35 @@ An interactive, accurate academic desktop simulator for Data Link Layer Sliding 
 
 ---
 
-## 📌 Project Overview
+## Project Overview
 
 This simulator demonstrates, compares, and evaluates the performance of three fundamental sliding window protocols:
-1. **One-Bit Sliding Window (Stop-and-Wait ARQ)**: Alternating sequence bit ($0/1$), sends one frame at a time and waits for an ACK before advancing. Detects duplicates when ACKs are lost.
-2. **Go-Back-N (GBN) ARQ**: Pipelined sender window ($N$), receiver accepts only in-order frames and discards out-of-order packets. Employs cumulative ACKs and a single timer for the oldest unacknowledged frame. On timeout, retransmits all outstanding frames in the window.
-3. **Selective Repeat (SR) ARQ**: Sender and receiver both maintain independent windows ($N$). Receiver buffers out-of-order frames within the window and issues individual ACKs. Sender maintains individual timers per frame and retransmits *only* timed-out frames.
+1. **One-Bit Sliding Window (Stop-and-Wait ARQ)**: Alternating sequence bit (0/1), sends one frame at a time and waits for an ACK before advancing. Detects duplicates when ACKs are lost.
+2. **Go-Back-N (GBN) ARQ**: Pipelined sender window (N), receiver accepts only in-order frames and discards out-of-order packets. Employs cumulative ACKs and a single timer for the oldest unacknowledged frame. On timeout, retransmits all outstanding frames in the window.
+3. **Selective Repeat (SR) ARQ**: Sender and receiver both maintain independent windows (N). Receiver buffers out-of-order frames within the window and issues individual ACKs. Sender maintains individual timers per frame and retransmits only timed-out frames.
 
 Includes an **All Protocols (Comparison Mode)** that runs all three protocols under identical network conditions and random seeds, presenting a side-by-side metric table and Matplotlib bar charts comparing Retransmissions, Throughput, and Efficiency.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 sliding_window_simulator/
-│
-├── main.py              # Application entry point, Tkinter GUI, and control handlers
-├── protocols.py         # Protocol state machines (One-Bit, Go-Back-N, Selective Repeat)
-├── simulator.py         # Discrete-event engine (timing, loss, timers, statistics)
-├── visualization.py     # Sender-Receiver canvas timeline and Matplotlib comparison charts
-├── test_protocols.py    # Unit tests validating the 7 required network scenarios
-├── test_gui.py          # Integration tests for UI controls, inputs, and comparison mode
-├── requirements.txt     # Python dependencies (matplotlib)
-└── README.md            # Documentation and demonstration guide
+|
+|-- main.py              # Application entry point, Tkinter GUI, and control handlers
+|-- protocols.py         # Protocol state machines (One-Bit, Go-Back-N, Selective Repeat)
+|-- simulator.py         # Discrete-event engine (timing, loss, timers, statistics)
+|-- visualization.py     # Sender-Receiver canvas timeline and Matplotlib comparison charts
+|-- test_protocols.py    # Unit tests validating the 7 required network scenarios
+|-- test_gui.py          # Integration tests for UI controls, inputs, and comparison mode
+|-- requirements.txt     # Python dependencies (matplotlib)
+`-- README.md            # Documentation and demonstration guide
 ```
 
 ---
 
-## ⚙️ Prerequisites & Setup (Virtual Environment)
+## Prerequisites and Setup (Virtual Environment)
 
 All operations run strictly inside a local virtual environment (`venv`) within this directory without affecting system packages.
 
@@ -65,7 +65,7 @@ pip install -r requirements.txt
 
 ---
 
-## 🚀 Running the Application
+## Running the Application
 
 To launch the simulator:
 
@@ -80,7 +80,7 @@ cd sliding_window_simulator
 
 ---
 
-## 🧪 Running Verification Tests
+## Running Verification Tests
 
 Run the test suite verifying all 7 protocol correctness tests (0% loss, 30% packet loss, 30% ACK loss, GBN discard/retransmit, SR buffer/retransmit, Window Size 1 equivalence, and 100% loss retry safety):
 
@@ -95,18 +95,18 @@ Run the GUI and integration tests:
 
 ---
 
-## 🖥️ User Interface & Controls
+## User Interface and Controls
 
 1. **Protocol Selection**:
    - Choose between *One-Bit Sliding Window*, *Go-Back-N*, *Selective Repeat*, or *All Protocols (Comparison Mode)*.
 2. **Parameters**:
-   - **Window Size ($N$)**: Size of the sliding window (default: `4`, min: `1`). Automatically locked to `1` for One-Bit.
+   - **Window Size (N)**: Size of the sliding window (default: `4`, min: `1`). Automatically locked to `1` for One-Bit.
    - **Number of Frames**: Total frames to transmit (default: `10`).
    - **Transmission Delay (ms)**: One-way delay from Sender to Receiver (default: `100 ms`).
    - **ACK Delay (ms)**: One-way delay for ACKs returning from Receiver to Sender (default: `50 ms`).
-   - **Packet Loss (%)**: Frame drop probability ($0-100\%$, default: `10%`).
-   - **ACK Loss (%)**: ACK drop probability ($0-100\%$, default: `5%`).
-   - **Timeout (ms)**: Retransmission timer duration (default: `300 ms`, $> RTT = 150\text{ ms}$).
+   - **Packet Loss (%)**: Frame drop probability (0-100%, default: `10%`).
+   - **ACK Loss (%)**: ACK drop probability (0-100%, default: `5%`).
+   - **Timeout (ms)**: Retransmission timer duration (default: `300 ms`, > RTT = 150 ms).
    - **Random Seed**: Integer seed (default: `42`) ensuring deterministic, reproducible loss patterns.
    - **Playback Speed**: Choose between `0.5x (Slow)`, `1x (Normal)`, `2x (Fast)`, `5x (Very Fast)`, or `Instant`.
 3. **Controls**:
@@ -114,16 +114,16 @@ Run the GUI and integration tests:
    - **PAUSE / RESUME**: Pauses execution mid-transmission for classroom explanation.
    - **RESET**: Clears canvas, statistics, and event log.
 4. **Visual Color Indicators**:
-   - 🟢 **Green**: Successfully transmitted / delivered frame.
-   - 🔴 **Red**: Lost frame (`X (LOST)`) or lost ACK (`X (ACK LOST)`).
-   - 🟠 **Orange**: Retransmitted frame or timeout marker.
-   - 🔵 **Blue**: ACK transmission and receipt.
-   - 🟣 **Purple**: Out-of-order frame safely buffered (Selective Repeat).
-   - 🟤 **Dark Orange / Red**: Out-of-order frame discarded (Go-Back-N).
+   - **Green**: Successfully transmitted / delivered frame.
+   - **Red**: Lost frame (`X (LOST)`) or lost ACK (`X (ACK LOST)`).
+   - **Orange**: Retransmitted frame or timeout marker.
+   - **Blue**: ACK transmission and receipt.
+   - **Purple**: Out-of-order frame safely buffered (Selective Repeat).
+   - **Dark Orange / Red**: Out-of-order frame discarded (Go-Back-N).
 
 ---
 
-## 📊 Performance Statistics & Formulas
+## Performance Statistics and Formulas
 
 The application computes actual metrics directly from simulation events:
 - **Total Frames Transmitted**: Every frame transmission attempt (original + retransmissions).
@@ -140,18 +140,18 @@ The application computes actual metrics directly from simulation events:
 
 ---
 
-## 🎓 Instructor Demonstration Walkthrough
+## Instructor Demonstration Walkthrough
 
 When presenting this project to your professor or lab examiner, follow this 4-step demonstration sequence:
 
 ### Step 1: Demonstrate Stop-and-Wait (One-Bit Sliding Window)
 1. Select **One-Bit Sliding Window**.
-2. Note that Window Size is fixed at 1 and sequence numbers alternate $0 \leftrightarrow 1$.
+2. Note that Window Size is fixed at 1 and sequence numbers alternate 0 and 1.
 3. Click **START SIMULATION**.
 4. Point out that the sender waits for ACK 0 before transmitting Frame 1.
 5. Set **ACK Loss = 30%** and run again: show that when ACK is lost, the sender times out and retransmits Frame 0. The receiver detects the duplicate sequence number, discards duplicate data, and resends the ACK so the sender can advance.
 
-### Step 2: Demonstrate Go-Back-N Discard & Window Retransmission
+### Step 2: Demonstrate Go-Back-N Discard and Window Retransmission
 1. Select **Go-Back-N** with Window Size = 4, Frames = 10, Packet Loss = 15%.
 2. Click **START SIMULATION**.
 3. Point out how the sender transmits frames pipelined up to window size 4.
@@ -159,13 +159,13 @@ When presenting this project to your professor or lab examiner, follow this 4-st
    - Notice the receiver receives subsequent Frame 3, but **discards** it because it is out of order (GBN does not buffer out-of-order frames).
    - When the single timer for the base expires, the sender goes back and retransmits **all** unacknowledged frames (both Frame 2 and Frame 3).
 
-### Step 3: Demonstrate Selective Repeat Buffering & Selective Retransmission
+### Step 3: Demonstrate Selective Repeat Buffering and Selective Retransmission
 1. Select **Selective Repeat** with Window Size = 4, Frames = 10, Packet Loss = 15%.
 2. Click **START SIMULATION**.
 3. When a frame (e.g. Frame 2) is lost:
-   - Notice the receiver **buffers** Frame 3 (highlighted in purple) instead of discarding it!
+   - Notice the receiver **buffers** Frame 3 (highlighted in purple) instead of discarding it.
    - Receiver sends individual ACK for Frame 3.
-   - On timeout of Frame 2, sender retransmits **ONLY Frame 2** (Frame 3 is NOT retransmitted!).
+   - On timeout of Frame 2, sender retransmits **ONLY Frame 2** (Frame 3 is NOT retransmitted).
    - Once Frame 2 arrives, the receiver delivers both Frame 2 and buffered Frame 3, sliding its window forward.
 
 ### Step 4: Demonstrate All Protocols (Comparison Mode)
@@ -173,6 +173,5 @@ When presenting this project to your professor or lab examiner, follow this 4-st
 2. Click **START SIMULATION**.
 3. Explain the comparison table and Matplotlib bar charts:
    - **Retransmissions**: Show that Selective Repeat has fewer retransmissions than Go-Back-N under loss because it does not retransmit already buffered frames.
-   - **Throughput & Efficiency**: Show that pipelined protocols (GBN and SR) achieve much higher throughput than Stop-and-Wait because they keep the channel full during round-trip delay.
+   - **Throughput and Efficiency**: Show that pipelined protocols (GBN and SR) achieve much higher throughput than Stop-and-Wait because they keep the channel full during round-trip delay.
    - Highlight that performance trade-offs depend on channel round-trip time, window size, and loss probabilities.
-
