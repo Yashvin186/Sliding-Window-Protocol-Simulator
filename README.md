@@ -18,14 +18,12 @@ Includes an **All Protocols (Comparison Mode)** that runs all three protocols un
 ## Project Structure
 
 ```text
-sliding_window_simulator/
-|
+.
 |-- main.py              # Application entry point, Tkinter GUI, and control handlers
 |-- protocols.py         # Protocol state machines (One-Bit, Go-Back-N, Selective Repeat)
 |-- simulator.py         # Discrete-event engine (timing, loss, timers, statistics)
 |-- visualization.py     # Sender-Receiver canvas timeline and Matplotlib comparison charts
 |-- test_protocols.py    # Unit tests validating the 7 required network scenarios
-|-- test_gui.py          # Integration tests for UI controls, inputs, and comparison mode
 |-- requirements.txt     # Python dependencies (matplotlib)
 `-- README.md            # Documentation and demonstration guide
 ```
@@ -70,12 +68,7 @@ pip install -r requirements.txt
 To launch the simulator:
 
 ```powershell
-.\venv\Scripts\python.exe main.py
-```
-*Or, from inside the package directory:*
-```powershell
-cd sliding_window_simulator
-..\venv\Scripts\python.exe main.py
+python main.py
 ```
 
 ---
@@ -85,12 +78,7 @@ cd sliding_window_simulator
 Run the test suite verifying all 7 protocol correctness tests (0% loss, 30% packet loss, 30% ACK loss, GBN discard/retransmit, SR buffer/retransmit, Window Size 1 equivalence, and 100% loss retry safety):
 
 ```powershell
-.\venv\Scripts\python.exe sliding_window_simulator/test_protocols.py
-```
-
-Run the GUI and integration tests:
-```powershell
-.\venv\Scripts\python.exe sliding_window_simulator/test_gui.py
+python test_protocols.py
 ```
 
 ---
