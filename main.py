@@ -306,28 +306,64 @@ class SlidingWindowApp(tk.Tk):
         self.lbl_retx = ttk.Label(status_bar, text="Retx: 0", font=("Segoe UI", 9), foreground="#d97706")
         self.lbl_retx.pack(side=tk.LEFT, padx=8)
 
-        # Canvas for Sender-Receiver arrows
-        self.viz_canvas = SenderReceiverCanvas(self.tab_sim)
-        self.viz_canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        # Vertical PanedWindow providing a draggable divider slider between Canvas and Event Log
+        self.sim_paned = ttk.PanedWindow(self.tab_sim, orient=tk.VERTICAL)
+        self.sim_paned.pack(fill=tk.BOTH, expand=True)
 
-        # Bottom Event Log
-        log_frame = ttk.LabelFrame(self.tab_sim, text="Simulation Event Log", padding=4)
-        log_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(4, 0))
+        # Canvas for Sender-Receiver arrows (Top Pane)
+        self.viz_canvas = SenderReceiverCanvas(self.sim_paned)
+        self.sim_paned.add(self.viz_canvas, weight=4)
 
-        log_scroll = ttk.Scrollbar(log_frame)
-        log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        # Bottom Event Log (Bottom Pane) with vertical & horizontal scrollbars and size slider
+        log_frame = ttk.LabelFrame(self.sim_paned, text="Simulation Event Log", padding=4)
+        self.sim_paned.add(log_frame, weight=1)
+
+        # Log Toolbar with Height Slider & Controls
+        log_toolbar = ttk.Frame(log_frame)
+        log_toolbar.pack(side=tk.TOP, fill=tk.X, pady=(0, 3))
+
+        ttk.Label(log_toolbar, text="Log Height Slider:", font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(4, 6))
+
+        self.log_height_slider = ttk.Scale(
+            log_toolbar,
+            from_=4,
+            to=25,
+            value=7,
+            orient=tk.HORIZONTAL,
+            length=140,
+            command=self._on_log_height_slide
+        )
+        self.log_height_slider.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.lbl_log_lines = ttk.Label(log_toolbar, text="7 lines", font=("Segoe UI", 8, "bold"), foreground="#0369a1")
+        self.lbl_log_lines.pack(side=tk.LEFT, padx=(0, 12))
+
+        btn_clear_log = ttk.Button(log_toolbar, text="Clear Log", command=self._clear_event_log)
+        btn_clear_log.pack(side=tk.RIGHT, padx=4)
+
+        # Log Text Area with Vertical & Horizontal Scrollbar Sliders
+        log_container = ttk.Frame(log_frame)
+        log_container.pack(fill=tk.BOTH, expand=True)
+
+        v_scroll = ttk.Scrollbar(log_container, orient=tk.VERTICAL)
+        v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        h_scroll = ttk.Scrollbar(log_container, orient=tk.HORIZONTAL)
+        h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
 
         self.log_text = tk.Text(
-            log_frame,
-            height=6,
-            font=("Consolas", 8),
+            log_container,
+            height=7,
+            font=("Consolas", 9),
             bg="#f8fafc",
             fg="#1e293b",
-            yscrollcommand=log_scroll.set,
-            wrap=tk.WORD
+            wrap=tk.NONE,
+            xscrollcommand=h_scroll.set,
+            yscrollcommand=v_scroll.set
         )
-        self.log_text.pack(fill=tk.X, expand=True)
-        log_scroll.config(command=self.log_text.yview)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        v_scroll.config(command=self.log_text.yview)
+        h_scroll.config(command=self.log_text.xview)
 
         # --- TAB 2: Comparison Mode ---
         self.tab_comparison = ttk.Frame(self.notebook)
@@ -364,6 +400,16 @@ class SlidingWindowApp(tk.Tk):
             self.speed_multiplier = 5.0
         elif "Instant" in sel:
             self.speed_multiplier = 9999.0
+
+    def _on_log_height_slide(self, val: str) -> None:
+        """Dynamically adjusts the text log height when user drags the slider."""
+        lines = int(float(val))
+        self.log_text.configure(height=lines)
+        self.lbl_log_lines.configure(text=f"{lines} lines")
+
+    def _clear_event_log(self) -> None:
+        """Clears the event log text area."""
+        self.log_text.delete("1.0", tk.END)
 
     def _validate_inputs(self) -> Optional[SimulationConfig]:
         """Validates configuration parameters according to section 2 rules."""

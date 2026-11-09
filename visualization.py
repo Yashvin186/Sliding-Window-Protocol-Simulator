@@ -87,19 +87,33 @@ class SenderReceiverCanvas(ttk.Frame):
 
         # Sender Column Header
         self.canvas.create_text(
-            self.sender_x, 21,
+            self.sender_x, 15,
             text="SENDER",
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 11, "bold"),
             fill="#1e293b",
+            tags="header"
+        )
+        self.canvas.create_text(
+            self.sender_x, 30,
+            text="(Orange = Retransmission / Retx)",
+            font=("Segoe UI", 7),
+            fill="#d97706",
             tags="header"
         )
 
         # Receiver Column Header
         self.canvas.create_text(
-            self.receiver_x, 21,
+            self.receiver_x, 15,
             text="RECEIVER",
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 11, "bold"),
             fill="#1e293b",
+            tags="header"
+        )
+        self.canvas.create_text(
+            self.receiver_x, 30,
+            text="(Green = Received | Blue = ACK)",
+            font=("Segoe UI", 7),
+            fill="#2563eb",
             tags="header"
         )
 
@@ -136,16 +150,18 @@ class SenderReceiverCanvas(ttk.Frame):
 
         if event.event_type == "FRAME_TX_START":
             # Sender starts transmitting frame
-            label = f"Frame {event.frame_id}"
             if event.is_retransmit:
-                label += " (Retx)"
+                label = f"Frame {event.frame_id} (Retx)"
+                box_w = 56
                 color = self.COLOR_RETRANSMIT
             else:
+                label = f"Frame {event.frame_id}"
+                box_w = 46
                 color = self.COLOR_SUCCESS
 
             # Sender node tag
             self.canvas.create_rectangle(
-                self.sender_x - 48, y - 11, self.sender_x + 48, y + 11,
+                self.sender_x - box_w, y - 11, self.sender_x + box_w, y + 11,
                 fill="#ffffff", outline=color, width=1.5
             )
             self.canvas.create_text(
