@@ -51,6 +51,14 @@ class BaseProtocol:
         """Returns True if all frames have been successfully delivered and acked."""
         return len(self.delivered_frames) == self.num_frames and self.sender_base >= self.num_frames
 
+    def get_acked_frames(self) -> List[int]:
+        """Returns list of frame IDs acknowledged by the sender so far."""
+        return list(range(0, min(self.sender_base, self.num_frames)))
+
+    def get_buffered_frames(self) -> List[int]:
+        """Returns list of out-of-order frames currently buffered at the receiver."""
+        return []
+
 
 class OneBitSlidingWindow(BaseProtocol):
     """
@@ -297,4 +305,16 @@ class SelectiveRepeat(BaseProtocol):
         start = self.receiver_base
         end = min(self.receiver_base + self.window_size - 1, self.num_frames - 1)
         return start, end
+
+    def get_acked_frames(self) -> List[int]:
+        """Returns all frames < sender_base plus out-of-order ACKed frames."""
+        acked = set(range(0, min(self.sender_base, self.num_frames)))
+        for fid, is_ack in self.sender_acked.items():
+            if is_ack:
+                acked.add(fid)
+        return sorted(acked)
+
+    def get_buffered_frames(self) -> List[int]:
+        """Returns frames buffered out-of-order at receiver (>= receiver_base)."""
+        return sorted(fid for fid in self.receiver_buffer if fid >= self.receiver_base)
 

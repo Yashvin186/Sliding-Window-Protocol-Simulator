@@ -96,7 +96,7 @@ python test_protocols.py
    - **ACK Loss (%)**: ACK drop probability (0-100%, default: `5%`).
    - **Timeout (ms)**: Retransmission timer duration (default: `300 ms`, > RTT = 150 ms).
    - **Random Seed**: Integer seed (default: `42`) ensuring deterministic, reproducible loss patterns.
-   - **Playback Speed**: Choose between `0.5x (Slow)`, `1x (Normal)`, `2x (Fast)`, `5x (Very Fast)`, or `Instant`.
+   - **Playback Speed**: Choose between `0.25x (Very Slow)`, `0.5x (Slow)`, `1x (Normal)`, `2x (Fast)`, `5x (Very Fast)`, or `Instant`.
 3. **Controls**:
    - **START SIMULATION**: Validates parameters and begins execution.
    - **PAUSE / RESUME**: Pauses execution mid-transmission for classroom explanation.

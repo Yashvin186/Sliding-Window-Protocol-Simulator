@@ -12,6 +12,7 @@ Handles:
 - Accurate performance statistics calculation
 """
 
+import copy
 from dataclasses import dataclass, field
 import heapq
 import random
@@ -92,6 +93,14 @@ class SimulationEvent:
     is_delivered: bool = False
     is_duplicate: bool = False
     is_buffered: bool = False
+    # Pairing and live animation snapshot fields
+    packet_uid: str = ""
+    sender_base: int = 0
+    sender_next: int = 0
+    sender_acked: List[int] = field(default_factory=list)
+    receiver_delivered: List[int] = field(default_factory=list)
+    receiver_buffered: List[int] = field(default_factory=list)
+    stats_snapshot: Optional[SimulationStats] = None
 
 
 class Simulator:
@@ -131,6 +140,28 @@ class Simulator:
     def _push_event(self, time_ms: float, event_type: str, data: Dict[str, Any]) -> None:
         self._seq_counter += 1
         heapq.heappush(self.queue, (time_ms, self._seq_counter, event_type, data))
+
+    def _record_event(self, **kwargs) -> None:
+        """Creates a SimulationEvent with live state and stats snapshots."""
+        snap = copy.copy(self.stats)
+        snap.delivered_frames = len(self.protocol.delivered_frames)
+        snap.total_time_ms = self.current_time_ms
+        snap.calculate(self.config.num_frames, self.config.tx_delay)
+
+        ev = SimulationEvent(
+            time_ms=self.current_time_ms,
+            sender_window=self.protocol.get_sender_window(),
+            receiver_window=self.protocol.get_receiver_window(),
+            delivered_count=len(self.protocol.delivered_frames),
+            sender_base=self.protocol.sender_base,
+            sender_next=self.protocol.next_frame_to_send,
+            sender_acked=self.protocol.get_acked_frames(),
+            receiver_delivered=list(self.protocol.delivered_frames),
+            receiver_buffered=self.protocol.get_buffered_frames(),
+            stats_snapshot=snap,
+            **kwargs
+        )
+        self.events.append(ev)
 
     def _should_drop_frame(self, frame_id: int, attempt: int) -> bool:
         if self.config.forced_frame_losses is not None:
@@ -197,21 +228,18 @@ class Simulator:
         if isinstance(self.protocol, OneBitSlidingWindow):
             desc = f"[{int(self.current_time_ms)} ms] Sender {prefix} Frame {frame_id} (Seq {seq})."
 
-        ev = SimulationEvent(
-            time_ms=self.current_time_ms,
+        packet_uid = f"FRM_{frame_id}_{attempt}"
+        self._record_event(
             event_type="FRAME_TX_START",
             frame_id=frame_id,
             attempt_idx=attempt,
             seq_num=seq,
             is_retransmit=is_retransmit,
             description=desc,
-            sender_window=self.protocol.get_sender_window(),
-            receiver_window=self.protocol.get_receiver_window(),
-            delivered_count=len(self.protocol.delivered_frames),
             visual_color=color,
-            direction="s2r"
+            direction="s2r",
+            packet_uid=packet_uid
         )
-        self.events.append(ev)
 
         # Check packet loss
         lost = self._should_drop_frame(frame_id, attempt)
@@ -221,7 +249,8 @@ class Simulator:
             "seq_num": seq,
             "attempt": attempt,
             "is_lost": lost,
-            "is_retransmit": is_retransmit
+            "is_retransmit": is_retransmit,
+            "packet_uid": packet_uid
         })
 
     def run(self) -> SimulationStats:
@@ -237,17 +266,13 @@ class Simulator:
             if self.current_time_ms > self.config.max_simulation_time_ms:
                 self.stats.aborted = True
                 self.stats.abort_reason = f"Exceeded maximum simulation time limit ({self.config.max_simulation_time_ms} ms)."
-                self.events.append(SimulationEvent(
-                    time_ms=self.current_time_ms,
+                self._record_event(
                     event_type="SIMULATION_ABORTED",
                     frame_id=-1,
                     description=f"[{int(self.current_time_ms)} ms] Simulation aborted: {self.stats.abort_reason}",
-                    sender_window=self.protocol.get_sender_window(),
-                    receiver_window=self.protocol.get_receiver_window(),
-                    delivered_count=len(self.protocol.delivered_frames),
                     visual_color="red",
                     direction="sender"
-                ))
+                )
                 break
 
             if ev_type == "FRAME_ARRIVE":
@@ -266,17 +291,13 @@ class Simulator:
                 for fid in range(self.config.num_frames):
                     self._stop_timer(fid)
 
-                self.events.append(SimulationEvent(
-                    time_ms=self.current_time_ms,
+                self._record_event(
                     event_type="SIMULATION_COMPLETED",
                     frame_id=-1,
                     description=f"[{int(self.current_time_ms)} ms] All {self.config.num_frames} frames successfully delivered and acknowledged.",
-                    sender_window=self.protocol.get_sender_window(),
-                    receiver_window=self.protocol.get_receiver_window(),
-                    delivered_count=len(self.protocol.delivered_frames),
                     visual_color="green",
                     direction="receiver"
-                ))
+                )
                 break
 
         self.stats.delivered_frames = len(self.protocol.delivered_frames)
@@ -290,24 +311,22 @@ class Simulator:
         attempt = data["attempt"]
         is_lost = data["is_lost"]
         is_retransmit = data["is_retransmit"]
+        packet_uid = data["packet_uid"]
 
         if is_lost:
             self.stats.packets_lost += 1
             desc = f"[{int(self.current_time_ms)} ms] Frame {frame_id} was lost in transit."
-            self.events.append(SimulationEvent(
-                time_ms=self.current_time_ms,
+            self._record_event(
                 event_type="FRAME_LOST",
                 frame_id=frame_id,
                 attempt_idx=attempt,
                 seq_num=seq_num,
                 is_retransmit=is_retransmit,
                 description=desc,
-                sender_window=self.protocol.get_sender_window(),
-                receiver_window=self.protocol.get_receiver_window(),
-                delivered_count=len(self.protocol.delivered_frames),
                 visual_color="red",
-                direction="s2r"
-            ))
+                direction="s2r",
+                packet_uid=packet_uid
+            )
             return
 
         # Frame arrived safely at receiver
@@ -318,22 +337,19 @@ class Simulator:
             else:
                 desc = f"[{int(self.current_time_ms)} ms] Receiver detected duplicate Frame {frame_id} (Seq {seq_num}). Discarded payload."
 
-            self.events.append(SimulationEvent(
-                time_ms=self.current_time_ms,
+            self._record_event(
                 event_type="FRAME_RECEIVED",
                 frame_id=frame_id,
                 attempt_idx=attempt,
                 seq_num=seq_num,
                 is_retransmit=is_retransmit,
                 description=desc,
-                sender_window=self.protocol.get_sender_window(),
-                receiver_window=self.protocol.get_receiver_window(),
-                delivered_count=len(self.protocol.delivered_frames),
                 visual_color="green",
                 direction="receiver",
                 is_delivered=accepted,
-                is_duplicate=is_dup
-            ))
+                is_duplicate=is_dup,
+                packet_uid=packet_uid
+            )
             # Send ACK
             self._send_ack(ack_id=ack_seq, frame_id=frame_id)
 
@@ -344,22 +360,19 @@ class Simulator:
             else:
                 desc = f"[{int(self.current_time_ms)} ms] Receiver discarded out-of-order Frame {frame_id} (expected {self.protocol.receiver_expected})."
 
-            self.events.append(SimulationEvent(
-                time_ms=self.current_time_ms,
+            self._record_event(
                 event_type="FRAME_RECEIVED",
                 frame_id=frame_id,
                 attempt_idx=attempt,
                 seq_num=frame_id,
                 is_retransmit=is_retransmit,
                 description=desc,
-                sender_window=self.protocol.get_sender_window(),
-                receiver_window=self.protocol.get_receiver_window(),
-                delivered_count=len(self.protocol.delivered_frames),
                 visual_color="green" if accepted else "red",
                 direction="receiver",
                 is_delivered=accepted,
-                is_duplicate=False
-            ))
+                is_duplicate=False,
+                packet_uid=packet_uid
+            )
             # Send cumulative ACK if applicable
             if cumulative_ack is not None:
                 self._send_ack(ack_id=cumulative_ack, frame_id=frame_id)
@@ -376,52 +389,48 @@ class Simulator:
             else:
                 desc = f"[{int(self.current_time_ms)} ms] Receiver ignored outside-window Frame {frame_id}."
 
-            self.events.append(SimulationEvent(
-                time_ms=self.current_time_ms,
+            self._record_event(
                 event_type="FRAME_RECEIVED",
                 frame_id=frame_id,
                 attempt_idx=attempt,
                 seq_num=frame_id,
                 is_retransmit=is_retransmit,
                 description=desc,
-                sender_window=self.protocol.get_sender_window(),
-                receiver_window=self.protocol.get_receiver_window(),
-                delivered_count=len(self.protocol.delivered_frames),
                 visual_color="green" if accepted or is_dup else "red",
                 direction="receiver",
                 is_delivered=accepted and not is_buf,
                 is_duplicate=is_dup,
-                is_buffered=is_buf
-            ))
+                is_buffered=is_buf,
+                packet_uid=packet_uid
+            )
             # Selective repeat acknowledges each received frame individually
             self._send_ack(ack_id=ack_to_send, frame_id=frame_id)
 
     def _send_ack(self, ack_id: int, frame_id: int) -> None:
         self.ack_attempts[ack_id] = self.ack_attempts.get(ack_id, 0) + 1
         attempt = self.ack_attempts[ack_id]
+        ack_uid = f"ACK_{ack_id}_{attempt}"
 
         lost = self._should_drop_ack(ack_id, attempt)
         desc = f"[{int(self.current_time_ms)} ms] Receiver sent ACK {ack_id}."
-        self.events.append(SimulationEvent(
-            time_ms=self.current_time_ms,
+        self._record_event(
             event_type="ACK_TX_START",
             frame_id=frame_id,
             attempt_idx=attempt,
             ack_id=ack_id,
             description=desc,
-            sender_window=self.protocol.get_sender_window(),
-            receiver_window=self.protocol.get_receiver_window(),
-            delivered_count=len(self.protocol.delivered_frames),
             visual_color="blue",
-            direction="r2s"
-        ))
+            direction="r2s",
+            packet_uid=ack_uid
+        )
 
         arrival_time = self.current_time_ms + self.config.ack_delay
         self._push_event(arrival_time, "ACK_ARRIVE", {
             "ack_id": ack_id,
             "frame_id": frame_id,
             "attempt": attempt,
-            "is_lost": lost
+            "is_lost": lost,
+            "packet_uid": ack_uid
         })
 
     def _handle_ack_arrive(self, data: Dict[str, Any]) -> None:
@@ -429,23 +438,21 @@ class Simulator:
         frame_id = data["frame_id"]
         attempt = data["attempt"]
         is_lost = data["is_lost"]
+        ack_uid = data["packet_uid"]
 
         if is_lost:
             self.stats.acks_lost += 1
             desc = f"[{int(self.current_time_ms)} ms] ACK {ack_id} was lost in transit."
-            self.events.append(SimulationEvent(
-                time_ms=self.current_time_ms,
+            self._record_event(
                 event_type="ACK_LOST",
                 frame_id=frame_id,
                 attempt_idx=attempt,
                 ack_id=ack_id,
                 description=desc,
-                sender_window=self.protocol.get_sender_window(),
-                receiver_window=self.protocol.get_receiver_window(),
-                delivered_count=len(self.protocol.delivered_frames),
                 visual_color="red",
-                direction="r2s"
-            ))
+                direction="r2s",
+                packet_uid=ack_uid
+            )
             return
 
         # ACK safely received by sender
@@ -456,38 +463,31 @@ class Simulator:
             valid = self.protocol.on_ack_received(ack_id)
             if valid:
                 self._stop_timer("stop_and_wait")
-                self.events.append(SimulationEvent(
-                    time_ms=self.current_time_ms,
-                    event_type="ACK_RECEIVED",
-                    frame_id=frame_id,
-                    attempt_idx=attempt,
-                    ack_id=ack_id,
-                    description=desc,
-                    sender_window=self.protocol.get_sender_window(),
-                    receiver_window=self.protocol.get_receiver_window(),
-                    delivered_count=len(self.protocol.delivered_frames),
-                    visual_color="blue",
-                    direction="sender"
-                ))
-                # Now sender can send the next frame
+            self._record_event(
+                event_type="ACK_RECEIVED",
+                frame_id=frame_id,
+                attempt_idx=attempt,
+                ack_id=ack_id,
+                description=desc if valid else f"[{int(self.current_time_ms)} ms] Sender ignored late/duplicate ACK {ack_id}.",
+                visual_color="blue",
+                direction="sender",
+                packet_uid=ack_uid
+            )
+            if valid:
                 self._schedule_transmissions()
 
         elif isinstance(self.protocol, GoBackN):
-            old_base = self.protocol.sender_base
             newly_acked = self.protocol.on_ack_received(ack_id)
-            self.events.append(SimulationEvent(
-                time_ms=self.current_time_ms,
+            self._record_event(
                 event_type="ACK_RECEIVED",
                 frame_id=frame_id,
                 attempt_idx=attempt,
                 ack_id=ack_id,
                 description=desc,
-                sender_window=self.protocol.get_sender_window(),
-                receiver_window=self.protocol.get_receiver_window(),
-                delivered_count=len(self.protocol.delivered_frames),
                 visual_color="blue",
-                direction="sender"
-            ))
+                direction="sender",
+                packet_uid=ack_uid
+            )
 
             if newly_acked:
                 # Base has moved
@@ -504,20 +504,17 @@ class Simulator:
             valid = self.protocol.on_ack_received(ack_id)
             if valid:
                 self._stop_timer(ack_id)
-                self.events.append(SimulationEvent(
-                    time_ms=self.current_time_ms,
-                    event_type="ACK_RECEIVED",
-                    frame_id=frame_id,
-                    attempt_idx=attempt,
-                    ack_id=ack_id,
-                    description=desc,
-                    sender_window=self.protocol.get_sender_window(),
-                    receiver_window=self.protocol.get_receiver_window(),
-                    delivered_count=len(self.protocol.delivered_frames),
-                    visual_color="blue",
-                    direction="sender"
-                ))
-                # Window slides forward, check for new frames
+            self._record_event(
+                event_type="ACK_RECEIVED",
+                frame_id=frame_id,
+                attempt_idx=attempt,
+                ack_id=ack_id,
+                description=desc if valid else f"[{int(self.current_time_ms)} ms] Sender received duplicate ACK {ack_id}.",
+                visual_color="blue",
+                direction="sender",
+                packet_uid=ack_uid
+            )
+            if valid:
                 self._schedule_transmissions()
 
     def _handle_timeout_check(self, data: Dict[str, Any]) -> None:
@@ -536,17 +533,13 @@ class Simulator:
                 self._abort_retry_limit(frame_id)
                 return
 
-            self.events.append(SimulationEvent(
-                time_ms=self.current_time_ms,
+            self._record_event(
                 event_type="TIMEOUT",
                 frame_id=frame_id,
                 description=f"[{int(self.current_time_ms)} ms] Timeout occurred for Frame {frame_id}.",
-                sender_window=self.protocol.get_sender_window(),
-                receiver_window=self.protocol.get_receiver_window(),
-                delivered_count=len(self.protocol.delivered_frames),
                 visual_color="orange",
                 direction="sender"
-            ))
+            )
             # Retransmit frame
             self._send_frame(frame_id, is_retransmit=True)
 
@@ -559,17 +552,13 @@ class Simulator:
                 self._abort_retry_limit(base_frame)
                 return
 
-            self.events.append(SimulationEvent(
-                time_ms=self.current_time_ms,
+            self._record_event(
                 event_type="TIMEOUT",
                 frame_id=base_frame,
                 description=f"[{int(self.current_time_ms)} ms] Timeout occurred for Frame {base_frame} (GBN base). Retransmitting outstanding window.",
-                sender_window=self.protocol.get_sender_window(),
-                receiver_window=self.protocol.get_receiver_window(),
-                delivered_count=len(self.protocol.delivered_frames),
                 visual_color="orange",
                 direction="sender"
-            ))
+            )
 
             # GBN retransmits ALL unacknowledged frames in current window
             to_retransmit = self.protocol.get_retransmission_frames()
@@ -586,17 +575,13 @@ class Simulator:
                     self._abort_retry_limit(frame_id)
                     return
 
-                self.events.append(SimulationEvent(
-                    time_ms=self.current_time_ms,
+                self._record_event(
                     event_type="TIMEOUT",
                     frame_id=frame_id,
                     description=f"[{int(self.current_time_ms)} ms] Timeout occurred for Frame {frame_id}. Retransmitting Frame {frame_id}.",
-                    sender_window=self.protocol.get_sender_window(),
-                    receiver_window=self.protocol.get_receiver_window(),
-                    delivered_count=len(self.protocol.delivered_frames),
                     visual_color="orange",
                     direction="sender"
-                ))
+                )
                 # SR retransmits ONLY the timed-out frame
                 self._send_frame(frame_id, is_retransmit=True)
 
@@ -605,16 +590,12 @@ class Simulator:
         self.stats.abort_reason = (
             f"Maximum retry limit ({self.config.max_retries_per_frame}) reached for Frame {frame_id}."
         )
-        self.events.append(SimulationEvent(
-            time_ms=self.current_time_ms,
+        self._record_event(
             event_type="SIMULATION_ABORTED",
             frame_id=frame_id,
             description=f"[{int(self.current_time_ms)} ms] Simulation stopped: {self.stats.abort_reason}",
-            sender_window=self.protocol.get_sender_window(),
-            receiver_window=self.protocol.get_receiver_window(),
-            delivered_count=len(self.protocol.delivered_frames),
             visual_color="red",
             direction="sender"
-        ))
+        )
         self.queue.clear()
 

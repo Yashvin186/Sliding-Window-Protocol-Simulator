@@ -52,7 +52,8 @@ class SlidingWindowApp(tk.Tk):
         self.is_paused: bool = False
         self.is_running: bool = False
         self.after_id: Optional[str] = None
-        self.speed_multiplier: float = 1.0
+        self._awaiting_canvas_anim: bool = False
+        self.speed_multiplier: float = 0.5
 
         # Construct UI
         self._create_layout()
@@ -200,13 +201,13 @@ class SlidingWindowApp(tk.Tk):
 
         # Animation Speed
         ttk.Label(cfg_frame, text="Playback Speed:").grid(row=row, column=0, sticky="w", pady=(6, 2))
-        self.speed_var = tk.StringVar(value="1x (Normal)")
+        self.speed_var = tk.StringVar(value="0.5x (Slow)")
         self.speed_combo = ttk.Combobox(
             cfg_frame,
             textvariable=self.speed_var,
-            values=["0.5x (Slow)", "1x (Normal)", "2x (Fast)", "5x (Very Fast)", "Instant"],
+            values=["0.25x (Very Slow)", "0.5x (Slow)", "1x (Normal)", "2x (Fast)", "5x (Very Fast)", "Instant"],
             state="readonly",
-            width=12
+            width=15
         )
         self.speed_combo.grid(row=row, column=1, sticky="e", pady=(6, 2))
         self.speed_combo.bind("<<ComboboxSelected>>", lambda e: self._on_speed_change())
@@ -390,7 +391,9 @@ class SlidingWindowApp(tk.Tk):
 
     def _on_speed_change(self) -> None:
         sel = self.speed_var.get()
-        if "0.5x" in sel:
+        if "0.25x" in sel:
+            self.speed_multiplier = 0.25
+        elif "0.5x" in sel:
             self.speed_multiplier = 0.5
         elif "1x" in sel:
             self.speed_multiplier = 1.0
@@ -400,6 +403,20 @@ class SlidingWindowApp(tk.Tk):
             self.speed_multiplier = 5.0
         elif "Instant" in sel:
             self.speed_multiplier = 9999.0
+
+    def _get_step_duration_ms(self) -> int:
+        """Returns animation duration per event step in milliseconds."""
+        if self.speed_multiplier >= 1000.0:
+            return 0
+        if self.speed_multiplier <= 0.25:
+            return 1350
+        if self.speed_multiplier <= 0.5:
+            return 850
+        if self.speed_multiplier <= 1.0:
+            return 480
+        if self.speed_multiplier <= 2.0:
+            return 240
+        return 90
 
     def _on_log_height_slide(self, val: str) -> None:
         """Dynamically adjusts the text log height when user drags the slider."""
@@ -483,10 +500,14 @@ class SlidingWindowApp(tk.Tk):
             return
 
         # Single Protocol Simulation Mode
+        eff_win_size = 1 if config.protocol == ProtocolType.ONE_BIT else config.window_size
+        self.viz_canvas.configure_simulation(config.num_frames, eff_win_size)
+
         self.current_simulator = Simulator(config)
         self.current_simulator.run()
         self.events_to_replay = self.current_simulator.events
         self.replay_idx = 0
+        self._awaiting_canvas_anim = False
 
         self.is_running = True
         self.is_paused = False
@@ -494,9 +515,9 @@ class SlidingWindowApp(tk.Tk):
         self.btn_pause.configure(state=tk.NORMAL, text="PAUSE")
 
         # If instant mode, replay all events immediately
-        if self.speed_multiplier >= 1000.0:
+        if self._get_step_duration_ms() == 0:
             for ev in self.events_to_replay:
-                self._apply_event_to_ui(ev)
+                self._apply_event_to_ui(ev, step_ms=0, on_done=None)
             self._finalize_simulation(self.current_simulator.stats)
         else:
             self._schedule_next_event()
@@ -510,31 +531,37 @@ class SlidingWindowApp(tk.Tk):
                 self._finalize_simulation(self.current_simulator.stats)
             return
 
+        step_ms = self._get_step_duration_ms()
+        if step_ms == 0:
+            # Switched to Instant mode mid-simulation
+            while self.replay_idx < len(self.events_to_replay):
+                ev = self.events_to_replay[self.replay_idx]
+                self._apply_event_to_ui(ev, step_ms=0, on_done=None)
+                self.replay_idx += 1
+            if self.current_simulator:
+                self._finalize_simulation(self.current_simulator.stats)
+            return
+
         ev = self.events_to_replay[self.replay_idx]
-        self._apply_event_to_ui(ev)
         self.replay_idx += 1
+        self._awaiting_canvas_anim = True
 
-        # Calculate delay to next event
-        if self.replay_idx < len(self.events_to_replay):
-            next_ev = self.events_to_replay[self.replay_idx]
-            sim_delta_ms = max(5.0, next_ev.time_ms - ev.time_ms)
-            gui_delay_ms = int(sim_delta_ms / self.speed_multiplier)
-            # Bound GUI delay between 15ms and 800ms for smooth visibility
-            gui_delay_ms = max(15, min(gui_delay_ms, 800))
-        else:
-            gui_delay_ms = 20
+        def _after_anim() -> None:
+            self._awaiting_canvas_anim = False
+            if not self.is_running or self.is_paused:
+                return
+            # Pause briefly between events based on speed
+            gap_ms = max(25, step_ms // 5)
+            self.after_id = self.after(gap_ms, self._schedule_next_event)
 
-        self.after_id = self.after(gui_delay_ms, self._schedule_next_event)
+        self._apply_event_to_ui(ev, step_ms=step_ms, on_done=_after_anim)
 
-    def _apply_event_to_ui(self, ev: SimulationEvent) -> None:
-        # 1. Update Canvas
-        self.viz_canvas.add_event(ev)
-
-        # 2. Append to Event Log
+    def _apply_event_to_ui(self, ev: SimulationEvent, step_ms: int = 0, on_done=None) -> None:
+        # 1. Append to Event Log
         self.log_text.insert(tk.END, ev.description + "\n")
         self.log_text.see(tk.END)
 
-        # 3. Update Status Indicators
+        # 2. Update Status Indicators
         f_text = f"Frame {ev.frame_id}" if ev.frame_id >= 0 else "--"
         if ev.is_retransmit:
             f_text += " [Retx]"
@@ -550,11 +577,18 @@ class SlidingWindowApp(tk.Tk):
 
         self.lbl_delivered.configure(text=f"Delivered: {ev.delivered_count}")
 
-        # Update stats live
-        if self.current_simulator:
+        # 3. Update live statistics from snapshot at this event's timestamp
+        if ev.stats_snapshot is not None:
+            st = ev.stats_snapshot
+            self.lbl_retx.configure(text=f"Retx: {st.num_retransmissions}")
+            self._update_stats_display(st)
+        elif self.current_simulator:
             st = self.current_simulator.stats
             self.lbl_retx.configure(text=f"Retx: {st.num_retransmissions}")
             self._update_stats_display(st)
+
+        # 4. Animate Canvas & Window Strip
+        self.viz_canvas.play_event(ev, step_duration_ms=step_ms, on_done=on_done)
 
     def _update_stats_display(self, st: SimulationStats) -> None:
         self.stat_labels["Total Transmissions"].configure(text=str(st.total_frames_transmitted))
@@ -590,10 +624,14 @@ class SlidingWindowApp(tk.Tk):
         if self.is_paused:
             self.is_paused = False
             self.btn_pause.configure(text="PAUSE")
-            self._schedule_next_event()
+            if self._awaiting_canvas_anim:
+                self.viz_canvas.resume_animation()
+            else:
+                self._schedule_next_event()
         else:
             self.is_paused = True
             self.btn_pause.configure(text="RESUME")
+            self.viz_canvas.pause_animation()
             if self.after_id:
                 self.after_cancel(self.after_id)
                 self.after_id = None
@@ -605,6 +643,7 @@ class SlidingWindowApp(tk.Tk):
 
         self.is_running = False
         self.is_paused = False
+        self._awaiting_canvas_anim = False
         self.replay_idx = 0
         self.events_to_replay = []
         self.current_simulator = None
