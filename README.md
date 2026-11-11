@@ -23,7 +23,6 @@ Includes an **All Protocols (Comparison Mode)** that runs all three protocols un
 |-- protocols.py         # Protocol state machines (One-Bit, Go-Back-N, Selective Repeat)
 |-- simulator.py         # Discrete-event engine (timing, loss, timers, statistics)
 |-- visualization.py     # Sender-Receiver canvas timeline and Matplotlib comparison charts
-|-- test_protocols.py    # Unit tests validating the 7 required network scenarios
 |-- requirements.txt     # Python dependencies (matplotlib)
 `-- README.md            # Documentation and demonstration guide
 ```
@@ -69,16 +68,6 @@ To launch the simulator:
 
 ```powershell
 python main.py
-```
-
----
-
-## Running Verification Tests
-
-Run the test suite verifying all 7 protocol correctness tests (0% loss, 30% packet loss, 30% ACK loss, GBN discard/retransmit, SR buffer/retransmit, Window Size 1 equivalence, and 100% loss retry safety):
-
-```powershell
-python test_protocols.py
 ```
 
 ---
